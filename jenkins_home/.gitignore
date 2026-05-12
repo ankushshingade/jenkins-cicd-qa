@@ -1,0 +1,63 @@
+# ── Maven ──────────────────────────────────
+target/
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
+dependency-reduced-pom.xml
+
+# ── Java ───────────────────────────────────
+*.class
+*.jar
+*.war
+*.ear
+*.nar
+hs_err_pid*
+
+# ── TestNG / Test Output ───────────────────
+test-output/
+surefire-reports/
+*.xml.bak
+
+# ── Screenshots / Reports ──────────────────
+screenshots/
+reports/
+extent-reports/
+allure-results/
+allure-report/
+
+# ── IDE ────────────────────────────────────
+.idea/
+*.iml
+*.ipr
+*.iws
+.classpath
+.project
+.settings/
+*.eclipse
+.vscode/
+*.code-workspace
+
+# ── OS ─────────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# ── Logs ───────────────────────────────────
+*.log
+logs/
+
+# ── Secrets / Config ───────────────────────
+.env
+*.properties.local
+secrets.properties
+credentials.json
+
+# ── Jenkins ────────────────────────────────
+.jenkins/
+workspace/

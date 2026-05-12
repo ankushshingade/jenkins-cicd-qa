@@ -1,0 +1,415 @@
+// ============================================================
+//  JENKINS CI/CD PIPELINE — QA Automation Project
+//  Author : Ankush Shingade
+//  Repo   : https://github.com/<your-username>/jenkins-cicd-qa
+//
+//  Pipeline Stages:
+//  1. Checkout        — Pull code from GitHub
+//  2. Validate        — Check environment and tools
+//  3. Build           — Compile Java source code
+//  4. Unit Tests      — Run TestNG unit tests
+//  5. Code Analysis   — Static analysis (optional Checkstyle)
+//  6. Package         — Build JAR artifact
+//  7. Deploy to QA    — Deploy to QA environment
+//  8. Smoke Tests     — Run smoke suite against QA
+//  9. Notify          — Email/Slack notification
+// ============================================================
+
+pipeline {
+
+    // Run on any available agent (or specify a label for a specific node)
+    agent any
+
+    // ── Pipeline-level parameters (visible in Jenkins UI "Build with Parameters") ──
+    parameters {
+        choice(
+            name: 'ENVIRONMENT',
+            choices: ['qa', 'dev', 'staging'],
+            description: 'Target environment for deployment and testing'
+        )
+        choice(
+            name: 'BROWSER',
+            choices: ['chrome', 'firefox', 'edge'],
+            description: 'Browser for Selenium tests'
+        )
+        choice(
+            name: 'TEST_SUITE',
+            choices: ['smoke', 'regression', 'full'],
+            description: 'TestNG suite to execute'
+        )
+        booleanParam(
+            name: 'HEADLESS',
+            defaultValue: true,
+            description: 'Run browser in headless mode (required for CI)'
+        )
+        booleanParam(
+            name: 'SKIP_TESTS',
+            defaultValue: false,
+            description: 'Skip test execution (build only)'
+        )
+    }
+
+    // ── Environment variables available to all stages ──
+    environment {
+        // Java & Maven
+        JAVA_HOME         = tool 'JDK-11'           // Configured in Jenkins → Global Tools
+        MAVEN_HOME        = tool 'Maven-3.9'         // Configured in Jenkins → Global Tools
+        PATH              = "${JAVA_HOME}/bin:${MAVEN_HOME}/bin:${PATH}"
+
+        // Project paths
+        APP_DIR           = 'app'
+        REPORTS_DIR       = 'app/test-output'
+        ARTIFACT_DIR      = 'app/target'
+
+        // GitHub
+        GITHUB_REPO       = 'https://github.com/<your-username>/jenkins-cicd-qa.git'
+        GIT_CREDENTIALS   = 'github-credentials'    // Jenkins credential ID
+
+        // Notifications — store real values in Jenkins Credentials
+        SMTP_CREDENTIALS  = credentials('smtp-credentials')
+        NOTIFY_EMAIL      = 'ankushshingade@gmail.com'
+
+        // Build info
+        BUILD_TIMESTAMP   = sh(script: "date '+%Y%m%d_%H%M%S'", returnStdout: true).trim()
+        ARTIFACT_NAME     = "jenkins-cicd-demo-${env.BUILD_NUMBER}.jar"
+		
+		SELENIUM_REMOTE_URL = "http://selenium-chrome:4444/wd/hub"
+    }
+
+    // ── Global options ──
+    options {
+        // Keep only last 10 builds to save disk space
+        buildDiscarder(logRotator(numToKeepStr: '10', artifactNumToKeepStr: '5'))
+
+        // Fail if pipeline runs longer than 30 minutes
+        timeout(time: 30, unit: 'MINUTES')
+
+        // Add timestamps to console output
+        timestamps()
+
+        // Do not run concurrent builds of the same branch
+        disableConcurrentBuilds()
+
+        // Retry failed stages once before failing
+        retry(1)
+    }
+
+    // ── Trigger: run automatically on GitHub push + nightly at midnight ──
+    triggers {
+        // GitHub webhook trigger (requires GitHub plugin + webhook configured on repo)
+        githubPush()
+
+        // Nightly regression run at midnight
+        cron('0 0 * * *')
+    }
+
+    // ==================================================================
+    //  S T A G E S
+    // ==================================================================
+    stages {
+
+        // ── STAGE 1: Checkout ──────────────────────────────────────────
+        stage('1. Checkout') {
+            steps {
+                echo "╔══════════════════════════════╗"
+                echo "║  STAGE 1: Checkout from Git  ║"
+                echo "╚══════════════════════════════╝"
+
+                // Clean workspace before checkout
+                cleanWs()
+
+                // Checkout from GitHub using stored credentials
+                git branch: 'main',
+                    credentialsId: "${GIT_CREDENTIALS}",
+                    url: "${GITHUB_REPO}"
+
+                // Print commit info for traceability
+                sh '''
+                    echo "Branch   : $(git rev-parse --abbrev-ref HEAD)"
+                    echo "Commit   : $(git rev-parse HEAD)"
+                    echo "Author   : $(git log -1 --pretty=format:'%an')"
+                    echo "Message  : $(git log -1 --pretty=format:'%s')"
+                    echo "Timestamp: $(git log -1 --pretty=format:'%ci')"
+                '''
+            }
+        }
+
+        // ── STAGE 2: Validate Environment ─────────────────────────────
+        stage('2. Validate') {
+            steps {
+                echo "╔══════════════════════════════════╗"
+                echo "║  STAGE 2: Validate Environment   ║"
+                echo "╚══════════════════════════════════╝"
+
+                sh '''
+                    echo "--- Java Version ---"
+                    java -version
+
+                    echo "--- Maven Version ---"
+                    mvn -version
+
+                    echo "--- Environment Details ---"
+                    echo "Target ENV  : ${ENVIRONMENT}"
+                    echo "Browser     : ${BROWSER}"
+                    echo "Test Suite  : ${TEST_SUITE}"
+                    echo "Headless    : ${HEADLESS}"
+                    echo "Build No.   : ${BUILD_NUMBER}"
+                    echo "Build Node  : ${NODE_NAME}"
+                    echo "Workspace   : ${WORKSPACE}"
+
+                    echo "--- Chrome Version (for Selenium) ---"
+                    google-chrome --version 2>/dev/null || chromium-browser --version 2>/dev/null || echo "Chrome not found - headless mode required"
+                '''
+            }
+        }
+
+        // ── STAGE 3: Build ─────────────────────────────────────────────
+        stage('3. Build') {
+            steps {
+                echo "╔════════════════════════════╗"
+                echo "║  STAGE 3: Compile Sources  ║"
+                echo "╚════════════════════════════╝"
+
+                dir("${APP_DIR}") {
+                    sh '''
+                        echo "Compiling Java source files..."
+                        mvn clean compile -q \
+                            -Dmaven.test.skip=true \
+                            --no-transfer-progress
+                        echo "✅ Compilation successful"
+                    '''
+                }
+            }
+            post {
+                failure {
+                    echo "❌ BUILD FAILED — Check compilation errors above"
+                }
+            }
+        }
+
+        // ── STAGE 4: Unit Tests ────────────────────────────────────────
+        stage('4. Unit Tests') {
+            when {
+                expression { return !params.SKIP_TESTS }
+            }
+            steps {
+                echo "╔══════════════════════════════╗"
+                echo "║  STAGE 4: Run Unit Tests     ║"
+                echo "╚══════════════════════════════╝"
+
+                dir("${APP_DIR}") {
+                    sh """
+                        echo "Running TestNG unit tests..."
+                        mvn test \
+                            -Denv=${params.ENVIRONMENT} \
+                            -Dbrowser=${params.BROWSER} \
+                            -Dheadless=${params.HEADLESS} \
+                            -Dsurefire.suiteXmlFiles=testng.xml \
+                            --no-transfer-progress
+                    """
+                }
+            }
+            post {
+                always {
+                    // Publish TestNG results to Jenkins
+                    testNG reportFilenamePattern: '**/testng-results.xml'
+
+                    // Archive test output
+                    archiveArtifacts artifacts: 'app/test-output/**/*',
+                                     allowEmptyArchive: true
+                }
+                success {
+                    echo "✅ All unit tests passed"
+                }
+                failure {
+                    echo "❌ Unit tests FAILED — Review TestNG report"
+                }
+            }
+        }
+
+        // ── STAGE 5: Package ───────────────────────────────────────────
+        stage('5. Package') {
+            steps {
+                echo "╔══════════════════════════════╗"
+                echo "║  STAGE 5: Package Artifact   ║"
+                echo "╚══════════════════════════════╝"
+
+                dir("${APP_DIR}") {
+                    sh '''
+                        mvn package -DskipTests --no-transfer-progress -q
+                        echo "✅ Artifact packaged:"
+                        ls -lh target/*.jar
+                    '''
+                }
+
+                // Archive the JAR artifact in Jenkins
+                archiveArtifacts artifacts: "app/target/*.jar",
+                                 fingerprint: true,
+                                 allowEmptyArchive: false
+            }
+        }
+
+        // ── STAGE 6: Deploy to QA ──────────────────────────────────────
+        stage('6. Deploy to QA') {
+            when {
+                anyOf {
+                    branch 'main'
+                    branch 'develop'
+                    expression { return params.ENVIRONMENT == 'qa' }
+                }
+            }
+            steps {
+                echo "╔════════════════════════════════╗"
+                echo "║  STAGE 6: Deploy to QA Server  ║"
+                echo "╚════════════════════════════════╝"
+
+                // ── Replace this block with your actual deployment command ──
+                // Examples:
+                //   SCP to a remote server:
+                //     sshagent(['server-ssh-key']) {
+                //         sh "scp app/target/*.jar user@qa-server:/deployments/"
+                //     }
+                //
+                //   Docker deploy:
+                //     sh "docker build -t qa-app:${BUILD_NUMBER} ."
+                //     sh "docker run -d --name qa-app qa-app:${BUILD_NUMBER}"
+                //
+                //   Kubernetes:
+                //     sh "kubectl set image deployment/qa-app app=qa-app:${BUILD_NUMBER}"
+
+                sh '''
+                    echo "Simulating deployment to QA environment..."
+                    echo "Artifact  : ${ARTIFACT_DIR}/jenkins-cicd-demo-1.0.0.jar"
+                    echo "Target    : ${ENVIRONMENT}-server"
+                    echo "Timestamp : ${BUILD_TIMESTAMP}"
+                    echo "✅ Deployment simulation complete"
+                    echo "   In a real setup, replace this with scp/docker/kubectl commands"
+                '''
+            }
+        }
+
+        // ── STAGE 7: Smoke Tests on QA ─────────────────────────────────
+        stage('7. Smoke Tests') {
+            when {
+                expression { return !params.SKIP_TESTS }
+                expression { return params.TEST_SUITE == 'smoke' || params.TEST_SUITE == 'full' }
+            }
+            steps {
+                echo "╔════════════════════════════════╗"
+                echo "║  STAGE 7: Smoke Tests on QA    ║"
+                echo "╚════════════════════════════════╝"
+
+                dir("${APP_DIR}") {
+                    sh """
+                        echo "Running smoke test suite against ${params.ENVIRONMENT}..."
+                        mvn test \
+                            -Denv=${params.ENVIRONMENT} \
+                            -Dbrowser=${params.BROWSER} \
+                            -Dheadless=${params.HEADLESS} \
+                            -Dsurefire.suiteXmlFiles=testng-smoke.xml \
+                            --no-transfer-progress \
+                        || echo "Smoke tests completed with failures"
+                    """
+                }
+            }
+            post {
+                always {
+                    testNG reportFilenamePattern: '**/testng-results.xml'
+                    archiveArtifacts artifacts: 'app/test-output/**',
+                                     allowEmptyArchive: true
+                }
+            }
+        }
+
+    }
+    // ==================================================================
+    //  P O S T   A C T I O N S
+    // ==================================================================
+    post {
+
+        always {
+            echo "════════════════════════════════════════"
+            echo "  Pipeline Complete — Build #${BUILD_NUMBER}"
+            echo "  Status    : ${currentBuild.currentResult}"
+            echo "  Duration  : ${currentBuild.durationString}"
+            echo "  Timestamp : ${BUILD_TIMESTAMP}"
+            echo "════════════════════════════════════════"
+        }
+
+        success {
+            echo "✅ PIPELINE SUCCEEDED"
+
+            // Email on success
+            mail to: "${NOTIFY_EMAIL}",
+                 subject: "✅ Jenkins Build #${BUILD_NUMBER} PASSED — ${env.JOB_NAME}",
+                 body: """
+Hello Ankush,
+
+Your Jenkins pipeline completed successfully.
+
+Job       : ${env.JOB_NAME}
+Build No  : ${env.BUILD_NUMBER}
+Branch    : ${env.GIT_BRANCH}
+Duration  : ${currentBuild.durationString}
+Environment: ${params.ENVIRONMENT}
+Browser   : ${params.BROWSER}
+
+View full report: ${env.BUILD_URL}
+
+— Jenkins CI/CD System
+                 """
+        }
+
+        failure {
+            echo "❌ PIPELINE FAILED"
+
+            mail to: "${NOTIFY_EMAIL}",
+                 subject: "❌ Jenkins Build #${BUILD_NUMBER} FAILED — ${env.JOB_NAME}",
+                 body: """
+Hello Ankush,
+
+Your Jenkins pipeline FAILED. Immediate attention required.
+
+Job       : ${env.JOB_NAME}
+Build No  : ${env.BUILD_NUMBER}
+Branch    : ${env.GIT_BRANCH}
+Stage     : ${env.STAGE_NAME}
+Duration  : ${currentBuild.durationString}
+
+Failed Stage Console: ${env.BUILD_URL}console
+
+— Jenkins CI/CD System
+                 """
+        }
+
+        unstable {
+            echo "⚠️  PIPELINE UNSTABLE — Some tests failed"
+
+            mail to: "${NOTIFY_EMAIL}",
+                 subject: "⚠️ Jenkins Build #${BUILD_NUMBER} UNSTABLE — ${env.JOB_NAME}",
+                 body: """
+Hello Ankush,
+
+Pipeline completed but with test failures (UNSTABLE).
+
+Job       : ${env.JOB_NAME}
+Build No  : ${env.BUILD_NUMBER}
+Branch    : ${env.GIT_BRANCH}
+Duration  : ${currentBuild.durationString}
+
+Review failing tests: ${env.BUILD_URL}testReport
+
+— Jenkins CI/CD System
+                 """
+        }
+
+        cleanup {
+            // Always clean workspace after build
+            cleanWs(
+                cleanWhenSuccess: true,
+                cleanWhenFailure: false,   // Keep workspace on failure for debugging
+                cleanWhenUnstable: false
+            )
+        }
+    }
+}

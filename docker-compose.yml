@@ -1,0 +1,67 @@
+#version: '3.8'
+
+# ── Shared network so Jenkins can talk to Selenium ──
+networks:
+  jenkins-net:
+    driver: bridge
+
+# ── Shared volume for Jenkins data ──
+volumes:
+  jenkins_home:
+    driver: local
+
+services:
+
+  # ════════════════════════════════════
+  #  JENKINS — CI/CD Server
+  # ════════════════════════════════════
+  jenkins:
+    image: jenkins/jenkins:2.541.3-lts-jdk21 #image: jenkins/jenkins:lts-jdk11
+    container_name: jenkins
+    restart: unless-stopped
+    networks:
+      - jenkins-net
+    ports:
+      - "8080:8080"     # Jenkins UI
+      - "50000:50000"   # Jenkins agent port
+    volumes:
+      # Persist Jenkins data (jobs, plugins, credentials)
+      - jenkins_home:/var/jenkins_home
+      # Allow Jenkins to run Docker commands
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - DOCKER_HOST=unix:///var/run/docker.sock
+      - JAVA_OPTS=-Djenkins.install.runSetupWizard=false
+    user: root    # Needed to access docker.sock
+
+  # ════════════════════════════════════
+  #  SELENIUM CHROME — Headless Browser
+  # ════════════════════════════════════
+  selenium-chrome:
+    image: selenium/standalone-chrome:latest
+    container_name: selenium-chrome
+    restart: unless-stopped
+    networks:
+      - jenkins-net
+    ports:
+      - "4444:4444"     # Selenium Grid UI
+      - "7900:7900"     # noVNC (watch browser live in browser!)
+    shm_size: '2gb'     # Chrome needs shared memory
+    environment:
+      - SE_NODE_MAX_SESSIONS=3
+      - SE_VNC_NO_PASSWORD=1
+
+  # ════════════════════════════════════
+  #  SELENIUM FIREFOX — Optional
+  # ════════════════════════════════════
+  selenium-firefox:
+    image: selenium/standalone-firefox:latest
+    container_name: selenium-firefox
+    restart: unless-stopped
+    networks:
+      - jenkins-net
+    ports:
+      - "4445:4444"
+    shm_size: '2gb'
+    profiles:
+      - firefox    # Only starts when: docker compose --profile firefox up
