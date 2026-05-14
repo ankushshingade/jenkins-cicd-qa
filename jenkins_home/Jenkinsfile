@@ -62,7 +62,7 @@ pipeline {
         ARTIFACT_DIR      = 'app/target'
 
         // GitHub
-        GITHUB_REPO       = 'https://github.com/<your-username>/jenkins-cicd-qa.git'
+        GITHUB_REPO       = 'https://github.com/ankushshingade/jenkins-cicd-qa.git'
         GIT_CREDENTIALS   = 'github-credentials'    // Jenkins credential ID
 
         // Notifications — store real values in Jenkins Credentials
