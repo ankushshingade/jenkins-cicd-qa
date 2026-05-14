@@ -52,7 +52,7 @@ pipeline {
     // ── Environment variables available to all stages ──
     environment {
         // Java & Maven
-        JAVA_HOME         = tool 'JDK-11'           // Configured in Jenkins → Global Tools
+        JAVA_HOME         = tool 'JDK-21'           // Configured in Jenkins → Global Tools
         MAVEN_HOME        = tool 'Maven-3.9'         // Configured in Jenkins → Global Tools
         PATH              = "${JAVA_HOME}/bin:${MAVEN_HOME}/bin:${PATH}"
 
