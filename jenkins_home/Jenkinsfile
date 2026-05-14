@@ -66,11 +66,11 @@ pipeline {
         GIT_CREDENTIALS   = 'github-credentials'    // Jenkins credential ID
 
         // Notifications — store real values in Jenkins Credentials
-        SMTP_CREDENTIALS  = credentials('smtp-credentials')
+        //SMTP_CREDENTIALS  = credentials('smtp-credentials')
         NOTIFY_EMAIL      = 'ankushshingade@gmail.com'
 
         // Build info
-        BUILD_TIMESTAMP   = sh(script: "date '+%Y%m%d_%H%M%S'", returnStdout: true).trim()
+        BUILD_TIMESTAMP = new Date().format('yyyyMMdd_HHmmss') // BUILD_TIMESTAMP   = sh(script: "date '+%Y%m%d_%H%M%S'", returnStdout: true).trim()
         ARTIFACT_NAME     = "jenkins-cicd-demo-${env.BUILD_NUMBER}.jar"
 		
 		SELENIUM_REMOTE_URL = "http://selenium-chrome:4444/wd/hub"
@@ -325,91 +325,43 @@ pipeline {
     // ==================================================================
     //  P O S T   A C T I O N S
     // ==================================================================
-    post {
+	post {
 
-        always {
-            echo "════════════════════════════════════════"
-            echo "  Pipeline Complete — Build #${BUILD_NUMBER}"
-            echo "  Status    : ${currentBuild.currentResult}"
-            echo "  Duration  : ${currentBuild.durationString}"
-            echo "  Timestamp : ${BUILD_TIMESTAMP}"
-            echo "════════════════════════════════════════"
-        }
+		always {
+			echo "════════════════════════════════════════"
+			echo "  Pipeline    : ${env.JOB_NAME}"
+			echo "  Build No    : ${env.BUILD_NUMBER}"
+			echo "  Status      : ${currentBuild.currentResult}"
+			echo "  Duration    : ${currentBuild.durationString}"
+			echo "════════════════════════════════════════"
+		}
 
-        success {
-            echo "✅ PIPELINE SUCCEEDED"
+		success {
+			echo "✅ PIPELINE SUCCEEDED"
+			// Email notifications — configure SMTP in Jenkins first
+			// mail to: "${NOTIFY_EMAIL}",
+			//      subject: "✅ Build #${BUILD_NUMBER} PASSED",
+			//      body: "Build succeeded."
+		}
 
-            // Email on success
-            mail to: "${NOTIFY_EMAIL}",
-                 subject: "✅ Jenkins Build #${BUILD_NUMBER} PASSED — ${env.JOB_NAME}",
-                 body: """
-Hello Ankush,
+		failure {
+			echo "❌ PIPELINE FAILED"
+			// mail to: "${NOTIFY_EMAIL}",
+			//      subject: "❌ Build #${BUILD_NUMBER} FAILED",
+			//      body: "Build failed. Check console: ${env.BUILD_URL}console"
+		}
 
-Your Jenkins pipeline completed successfully.
+		unstable {
+			echo "⚠️ PIPELINE UNSTABLE"
+		}
 
-Job       : ${env.JOB_NAME}
-Build No  : ${env.BUILD_NUMBER}
-Branch    : ${env.GIT_BRANCH}
-Duration  : ${currentBuild.durationString}
-Environment: ${params.ENVIRONMENT}
-Browser   : ${params.BROWSER}
+		cleanup {
+			cleanWs(
+				cleanWhenSuccess:  true,
+				cleanWhenFailure:  false,
+				cleanWhenUnstable: false
+			)
+		}
+	}
 
-View full report: ${env.BUILD_URL}
-
-— Jenkins CI/CD System
-                 """
-        }
-
-        failure {
-            echo "❌ PIPELINE FAILED"
-
-            mail to: "${NOTIFY_EMAIL}",
-                 subject: "❌ Jenkins Build #${BUILD_NUMBER} FAILED — ${env.JOB_NAME}",
-                 body: """
-Hello Ankush,
-
-Your Jenkins pipeline FAILED. Immediate attention required.
-
-Job       : ${env.JOB_NAME}
-Build No  : ${env.BUILD_NUMBER}
-Branch    : ${env.GIT_BRANCH}
-Stage     : ${env.STAGE_NAME}
-Duration  : ${currentBuild.durationString}
-
-Failed Stage Console: ${env.BUILD_URL}console
-
-— Jenkins CI/CD System
-                 """
-        }
-
-        unstable {
-            echo "⚠️  PIPELINE UNSTABLE — Some tests failed"
-
-            mail to: "${NOTIFY_EMAIL}",
-                 subject: "⚠️ Jenkins Build #${BUILD_NUMBER} UNSTABLE — ${env.JOB_NAME}",
-                 body: """
-Hello Ankush,
-
-Pipeline completed but with test failures (UNSTABLE).
-
-Job       : ${env.JOB_NAME}
-Build No  : ${env.BUILD_NUMBER}
-Branch    : ${env.GIT_BRANCH}
-Duration  : ${currentBuild.durationString}
-
-Review failing tests: ${env.BUILD_URL}testReport
-
-— Jenkins CI/CD System
-                 """
-        }
-
-        cleanup {
-            // Always clean workspace after build
-            cleanWs(
-                cleanWhenSuccess: true,
-                cleanWhenFailure: false,   // Keep workspace on failure for debugging
-                cleanWhenUnstable: false
-            )
-        }
-    }
 }
