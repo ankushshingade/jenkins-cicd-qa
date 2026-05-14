@@ -63,7 +63,7 @@ pipeline {
 
         // GitHub
         GITHUB_REPO       = 'https://github.com/ankushshingade/jenkins-cicd-qa.git'
-        GIT_CREDENTIALS   = 'github-credentials'    // Jenkins credential ID
+        GIT_CREDENTIALS   = 'ankushshingade'    // Jenkins credential ID
 
         // Notifications — store real values in Jenkins Credentials
         //SMTP_CREDENTIALS  = credentials('smtp-credentials')
