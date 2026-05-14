@@ -356,12 +356,15 @@ pipeline {
 		}
 
 		cleanup {
-			cleanWs(
-				cleanWhenSuccess:  true,
-				cleanWhenFailure:  false,
-				cleanWhenUnstable: false
-			)
+			node('built-in') {
+				cleanWs(
+					cleanWhenSuccess:  true,
+					cleanWhenFailure:  false,
+					cleanWhenUnstable: false
+				)
+			}
 		}
+
 	}
 
 }
